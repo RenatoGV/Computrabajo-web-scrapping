@@ -4,7 +4,7 @@ from pathlib import Path
 
 from computrabajo import scrapear_ofertas
 
-SALIDA = Path("data/ofertas.json")
+SALIDA = Path(__file__).resolve().parent / "data" / "ofertas.json"
 
 
 def guardar_ofertas(ofertas: list[dict]) -> None:
@@ -12,6 +12,17 @@ def guardar_ofertas(ofertas: list[dict]) -> None:
     SALIDA.parent.mkdir(parents=True, exist_ok=True)
     with SALIDA.open("w", encoding="utf-8") as archivo:
         json.dump(ofertas, archivo, ensure_ascii=False, indent=3)
+
+
+def buscar_ofertas(
+    puesto: str = "software",
+    ubicacion: str = "",
+    modalidad: str = "",
+) -> list[dict]:
+    """Busca ofertas, las guarda en JSON y devuelve la lista a quien la llamó."""
+    ofertas = scrapear_ofertas(puesto or "software", ubicacion, modalidad)
+    guardar_ofertas(ofertas)
+    return ofertas
 
 
 def main() -> None:
@@ -27,8 +38,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    ofertas = scrapear_ofertas(args.puesto, args.ubicacion, args.modalidad)
-    guardar_ofertas(ofertas)
+    ofertas = buscar_ofertas(args.puesto, args.ubicacion, args.modalidad)
 
     print(f"Se guardaron {len(ofertas)} ofertas en {SALIDA}.")
 
