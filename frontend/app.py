@@ -1,7 +1,14 @@
 
-import json
+import sys
 from pathlib import Path
 import streamlit as st
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from scraper import buscar_ofertas
+from exportar import generar_csv
 
 
 # ==========================================
@@ -30,7 +37,7 @@ st.markdown("""
     --azul-claro: #DCEBFA;
     --fondo: #F1F6FC;
     --blanco: #FFFFFF;
-    --texto: #142B4D;
+    --texto: #10243D;
     --secundario: #536B88;
     --borde: #BBD3ED;
 }
@@ -97,32 +104,53 @@ footer {
     margin-bottom: 25px;
 }
 
-/* Nota informativa */
-.sidebar-nota {
-    color: #E2EEFC;
-    font-size: 12px;
-    line-height: 1.6;
-    background: rgba(255,255,255,0.10);
-    border: 1px solid rgba(255,255,255,0.25);
-    padding: 13px;
-    border-radius: 10px;
+.empty-state {
+    background: #FFFFFF;
+    border: 1px solid #BBD3ED;
+    border-radius: 16px;
+    padding: 48px 24px;
+    margin: 24px 0;
+    text-align: center;
+    box-shadow: 0 4px 14px rgba(16,45,82,0.06);
+}
+
+.empty-state-icon {
+    font-size: 42px;
+    margin-bottom: 12px;
+}
+
+.empty-state-title {
+    color: #10243D;
+    font-size: 22px;
+    font-weight: 800;
+    margin-bottom: 8px;
+}
+
+.empty-state-copy {
+    color: #536B88;
+    font-size: 15px;
 }
 
 /* Campos de búsqueda */
 [data-testid="stSidebar"] input {
     background: #FFFFFF !important;
-    color: #142B4D !important;
+    color: #0D1F35 !important;
     border-radius: 8px !important;
+}
+
+[data-testid="stSidebar"] input::placeholder {
+    color: #596B80 !important;
+    opacity: 1;
 }
 
 [data-testid="stSidebar"] [data-baseweb="select"] > div {
     background: #FFFFFF !important;
-    color: #142B4D !important;
+    color: #0D1F35 !important;
     border-radius: 8px !important;
 }
 
 [data-testid="stSidebar"] [data-baseweb="select"] span {
-    color: #142B4D !important;
+    color: #0D1F35 !important;
 }
 
 /* Botón aplicar filtros */
@@ -252,6 +280,37 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
     color: #FFFFFF !important;
 }
 
+/* Descargar CSV: texto legible en los estados habilitado y deshabilitado */
+[data-testid="stDownloadButton"] button {
+    background: #126CC0 !important;
+    color: #FFFFFF !important;
+    border: 1px solid #126CC0 !important;
+    border-radius: 8px !important;
+    font-weight: 750 !important;
+    min-height: 40px;
+}
+
+[data-testid="stDownloadButton"] button * {
+    color: #FFFFFF !important;
+}
+
+[data-testid="stDownloadButton"] button:hover:not(:disabled) {
+    background: #084F94 !important;
+    border-color: #084F94 !important;
+}
+
+[data-testid="stDownloadButton"] button:disabled {
+    background: #DCE4EE !important;
+    color: #34465C !important;
+    border-color: #AEBCCC !important;
+    opacity: 1 !important;
+    cursor: not-allowed;
+}
+
+[data-testid="stDownloadButton"] button:disabled * {
+    color: #34465C !important;
+}
+
 /* Enlaces externos */
 .stLinkButton > a {
     background: #FFFFFF;
@@ -289,38 +348,36 @@ hr {
 
 
 # ==========================================
-# 9. CARGAR DATOS DEL JSON
+# 9. CONFIGURAR DEPARTAMENTOS Y NORMALIZACIÓN
 # ==========================================
 
-RUTA_JSON = (
-    Path(__file__).resolve().parent.parent
-    / "data"
-    / "ofertas.json"
-)
-
-
-def cargar_ofertas():
-
-    try:
-        with open(RUTA_JSON, "r", encoding="utf-8") as archivo:
-            datos = json.load(archivo)
-
-        return datos if isinstance(datos, list) else []
-
-    except FileNotFoundError:
-        st.error("No se encontró data/ofertas.json.")
-        return []
-
-    except json.JSONDecodeError:
-        st.error("El archivo JSON tiene un formato inválido.")
-        return []
-
-    except Exception as error:
-        st.error(f"Error al cargar las ofertas: {error}")
-        return []
-
-
-ofertas = cargar_ofertas()
+DEPARTAMENTOS_PERU = [
+    "Amazonas",
+    "Áncash",
+    "Apurímac",
+    "Arequipa",
+    "Ayacucho",
+    "Cajamarca",
+    "Callao",
+    "Cusco",
+    "Huancavelica",
+    "Huánuco",
+    "Ica",
+    "Junín",
+    "La Libertad",
+    "Lambayeque",
+    "Lima",
+    "Loreto",
+    "Madre de Dios",
+    "Moquegua",
+    "Pasco",
+    "Piura",
+    "Puno",
+    "San Martín",
+    "Tacna",
+    "Tumbes",
+    "Ucayali",
+]
 
 
 # ==========================================
@@ -330,13 +387,26 @@ ofertas = cargar_ofertas()
 if "oferta_seleccionada" not in st.session_state:
     st.session_state.oferta_seleccionada = None
 
+if "ofertas" not in st.session_state:
+    st.session_state.ofertas = []
+
+if "busqueda_realizada" not in st.session_state:
+    st.session_state.busqueda_realizada = False
+
+if "error_busqueda" not in st.session_state:
+    st.session_state.error_busqueda = None
+
 if "filtros_aplicados" not in st.session_state:
     st.session_state.filtros_aplicados = {
         "palabra": "",
-        "empresa": "Todas",
-        "ubicacion": "Todas",
-        "orden": "Predeterminado"
+        "ubicacion": "Todos",
+        "modalidad": "Todas"
     }
+
+st.session_state.filtros_aplicados.setdefault("modalidad", "Todas")
+st.session_state.filtros_aplicados.pop("empresa", None)
+if st.session_state.filtros_aplicados.get("ubicacion") == "Todas":
+    st.session_state.filtros_aplicados["ubicacion"] = "Todos"
 
 
 # ==========================================
@@ -353,21 +423,6 @@ st.sidebar.divider()
 st.sidebar.subheader("⚙️ Filtros de búsqueda")
 
 
-# Obtener empresas y ubicaciones disponibles
-
-empresas = sorted(set(
-    x.get("empresa", "").strip()
-    for x in ofertas
-    if x.get("empresa", "").strip()
-))
-
-ubicaciones = sorted(set(
-    x.get("ubicacion", "").strip()
-    for x in ofertas
-    if x.get("ubicacion", "").strip()
-))
-
-
 # Formulario de filtros
 
 with st.sidebar.form("form_filtros"):
@@ -377,113 +432,60 @@ with st.sidebar.form("form_filtros"):
         placeholder="Ejemplo: Java, analista..."
     )
 
-    empresa = st.selectbox(
-        "Empresa",
-        ["Todas"] + empresas
-    )
-
     ubicacion = st.selectbox(
-        "Ubicación",
-        ["Todas"] + ubicaciones
+        "Departamento",
+        ["Todos"] + DEPARTAMENTOS_PERU
     )
 
-    orden = st.selectbox(
-        "Ordenar resultados",
-        [
-            "Predeterminado",
-            "Puesto (A-Z)",
-            "Empresa (A-Z)",
-            "Ubicación (A-Z)"
-        ]
+    modalidad = st.selectbox(
+        "Modalidad",
+        ["Todas", "Presencial", "Remoto", "Híbrido"]
     )
 
-    aplicar = st.form_submit_button(
-        "🔎 Aplicar filtros",
+    buscar = st.form_submit_button(
+        "🔎 Buscar ofertas",
         use_container_width=True
     )
 
-    if aplicar:
+    if buscar:
 
         st.session_state.filtros_aplicados = {
             "palabra": palabra,
-            "empresa": empresa,
             "ubicacion": ubicacion,
-            "orden": orden
+            "modalidad": modalidad
         }
-
         st.session_state.oferta_seleccionada = None
+        st.session_state.busqueda_realizada = True
+        st.session_state.error_busqueda = None
 
+if buscar:
+    filtros = st.session_state.filtros_aplicados
+    ubicacion_busqueda = "" if filtros["ubicacion"] == "Todos" else filtros["ubicacion"]
+    modalidad_busqueda = "" if filtros["modalidad"] == "Todas" else filtros["modalidad"]
+    if modalidad_busqueda == "Híbrido":
+        modalidad_busqueda = "hibrido"
 
-st.sidebar.divider()
-
-st.sidebar.markdown("""
-<div class="sidebar-nota">
-    ⓘ Los datos mostrados provienen del archivo
-    <b>ofertas.json</b> generado por el scraper.
-</div>
-""", unsafe_allow_html=True)
-
-
-# ==========================================
-# 12. PROCESAMIENTO DE FILTROS
-# ==========================================
-
-filtros = st.session_state.filtros_aplicados
-
-resultados = []
-
-for oferta in ofertas:
-
-    puesto = oferta.get("puesto", "")
-    empresa_oferta = oferta.get("empresa", "")
-    ubicacion_oferta = oferta.get("ubicacion", "")
-
-    # Filtro por palabra clave
-    if filtros["palabra"]:
-
-        if filtros["palabra"].lower() not in puesto.lower():
-            continue
-
-    # Filtro por empresa
-    if filtros["empresa"] != "Todas":
-
-        if empresa_oferta != filtros["empresa"]:
-            continue
-
-    # Filtro por ubicación
-    if filtros["ubicacion"] != "Todas":
-
-        if ubicacion_oferta != filtros["ubicacion"]:
-            continue
-
-    resultados.append(oferta)
+    try:
+        with st.spinner("Buscando ofertas en Computrabajo..."):
+            st.session_state.ofertas = buscar_ofertas(
+                puesto=filtros["palabra"] or "software",
+                ubicacion=ubicacion_busqueda,
+                modalidad=modalidad_busqueda,
+            )
+    except Exception as error:
+        st.session_state.ofertas = []
+        st.session_state.error_busqueda = str(error)
 
 
 # ==========================================
-# 13. ORDENAMIENTO
+# 12. OBTENER RESULTADOS
 # ==========================================
 
-if filtros["orden"] == "Puesto (A-Z)":
-
-    resultados.sort(
-        key=lambda x: x.get("puesto", "").lower()
-    )
-
-elif filtros["orden"] == "Empresa (A-Z)":
-
-    resultados.sort(
-        key=lambda x: x.get("empresa", "").lower()
-    )
-
-elif filtros["orden"] == "Ubicación (A-Z)":
-
-    resultados.sort(
-        key=lambda x: x.get("ubicacion", "").lower()
-    )
-
+ofertas = st.session_state.ofertas
+resultados = list(ofertas)
 
 # ==========================================
-# 14. ENCABEZADO PRINCIPAL
+# 13. ENCABEZADO PRINCIPAL
 # ==========================================
 
 st.markdown("""
@@ -502,10 +504,8 @@ st.write("")
 
 
 # ==========================================
-# 15. ESTADÍSTICAS
+# 14. ESTADÍSTICAS
 # ==========================================
-
-total_ofertas = len(ofertas)
 
 total_resultados = len(resultados)
 
@@ -515,24 +515,30 @@ total_empresas = len(set(
     if x.get("empresa", "").strip()
 ))
 
+total_modalidades = len(set(
+    x.get("modalidad", "").strip()
+    for x in ofertas
+    if x.get("modalidad", "").strip()
+))
+
 col1, col2, col3 = st.columns(3)
 
 with col1:
     st.metric(
-        "💼 Ofertas registradas",
-        total_ofertas
+        "💼 Ofertas encontradas",
+        total_resultados
     )
 
 with col2:
     st.metric(
-        "🔎 Resultados encontrados",
-        total_resultados
+        "🏢 Empresas encontradas",
+        total_empresas
     )
 
 with col3:
     st.metric(
-        "🏢 Empresas registradas",
-        total_empresas
+        "🏠 Modalidades encontradas",
+        total_modalidades
     )
 
 
@@ -541,17 +547,41 @@ st.divider()
 
 
 # ==========================================
-# 16. LISTADO DE OFERTAS
+# 15. LISTADO DE OFERTAS
 # ==========================================
 
-st.subheader("💼 Ofertas laborales disponibles")
+col_titulo, col_exportar = st.columns([4, 1])
+with col_titulo:
+    st.subheader("💼 Ofertas laborales disponibles")
+    st.caption(f"Se encontraron {total_resultados} oportunidades.")
 
-st.caption(
-    f"Se encontraron {total_resultados} oportunidades."
-)
+with col_exportar:
+    st.download_button(
+        "⬇️ Exportar CSV",
+        data=generar_csv(resultados),
+        file_name="ofertas.csv",
+        mime="text/csv",
+        disabled=not st.session_state.busqueda_realizada,
+        use_container_width=True,
+        key="exportar_ofertas_csv",
+    )
 
 
-if resultados:
+if st.session_state.error_busqueda:
+    st.error(f"No se pudo completar la búsqueda: {st.session_state.error_busqueda}")
+
+if not st.session_state.busqueda_realizada:
+    st.markdown("""
+    <div class="empty-state">
+        <div class="empty-state-icon">🔎</div>
+        <div class="empty-state-title">Encuentra ofertas para ti</div>
+        <div class="empty-state-copy">
+            Elige puesto, departamento y modalidad; luego pulsa “Buscar ofertas”.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+elif resultados:
 
     for i, oferta in enumerate(resultados):
 
@@ -637,6 +667,11 @@ if resultados:
                 st.write("**Empresa:**", empresa)
 
                 st.write("**Ubicación:**", ubicacion)
+                st.write("**Modalidad:**", oferta.get("modalidad", "No especificada"))
+
+                descripcion = oferta.get("descripcion", "").strip()
+                if descripcion:
+                    st.write("**Descripción:**", descripcion)
 
                 if url:
 
@@ -646,7 +681,7 @@ if resultados:
                         key=f"detalle_url_{i}"
                     )
 
-else:
+elif not st.session_state.error_busqueda:
 
     st.warning(
         "No se encontraron ofertas que coincidan con los filtros."
@@ -654,7 +689,7 @@ else:
 
 
 # ==========================================
-# 17. PIE DE PÁGINA
+# 16. PIE DE PÁGINA
 # ==========================================
 
 st.divider()

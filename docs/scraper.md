@@ -8,21 +8,25 @@ Esta guía explica la estructura del proyecto y el recorrido de una oferta desde
 scraper.py       # Interfaz de consola y archivo de salida
 computrabajo.py  # Acceso y extracción de Computrabajo
 filters.py       # Normalización y filtros de las ofertas
+exportar.py      # Conversión de resultados a CSV para descargar
+frontend/app.py  # Interfaz web y presentación de resultados
 data/
 └── ofertas.json # Resultados de la última ejecución
 ```
 
 Cada módulo tiene una responsabilidad concreta:
 
-- **`scraper.py`** recibe los argumentos, coordina la búsqueda y guarda el resultado.
+- **`scraper.py`** recibe los argumentos, coordina la búsqueda, devuelve los resultados y guarda una copia en JSON.
 - **`computrabajo.py`** construye la búsqueda, descarga las páginas, recorre la paginación y extrae los datos de las tarjetas y las ofertas individuales.
 - **`filters.py`** normaliza textos y decide si una oferta satisface todos los filtros.
+- **`frontend/app.py`** llama directamente a `buscar_ofertas()` al enviar el formulario y muestra la lista devuelta, sin cargar el JSON.
+- **`exportar.py`** convierte la lista de resultados actual a CSV para descargarla desde la interfaz.
 
 ## Flujo de una búsqueda
 
 ```mermaid
 flowchart TD
-    A[Argumentos de consola] --> B[scraper.py llama al scraper web]
+    A[Formulario web o argumentos de consola] --> B[buscar_ofertas en scraper.py]
     B --> C[computrabajo.py construye la URL]
     C --> D[Descarga página de resultados]
     D --> E[Extrae tarjeta y enlace de oferta]
@@ -33,10 +37,16 @@ flowchart TD
     H --> J{Hay página siguiente?}
     I --> J
     J -- Sí --> D
-    J -- No --> K[scraper.py guarda data/ofertas.json]
+    J -- No --> K[scraper.py devuelve resultados y guarda una copia JSON]
 ```
 
-Los datos se reúnen por oferta durante la misma búsqueda web. El título, empresa, ubicación y modalidad se leen de la tarjeta de resultados; la descripción se obtiene abriendo el enlace individual. `filters.py` aplica todos los filtros sobre esa oferta ya completa. No se leen ofertas de una ejecución previa.
+Los datos se reúnen por oferta durante la misma búsqueda web. El título, empresa, ubicación y modalidad se leen de la tarjeta de resultados; la descripción se obtiene abriendo el enlace individual. `filters.py` aplica todos los filtros sobre esa oferta ya completa. La interfaz recibe la lista devuelta por `scraper.py`; el JSON se conserva como salida y no se usa para alimentar la vista.
+
+## Exportar resultados
+
+`frontend/app.py` muestra un botón para descargar `ofertas.csv` con los resultados de la búsqueda actual. El botón está deshabilitado antes de la primera búsqueda. `exportar.py` contiene `generar_csv(ofertas)`, que convierte las ofertas a CSV e incluye las columnas de puesto, empresa, ubicación, modalidad y enlace. Usa punto y coma como separador para que Excel en español distribuya los valores en columnas. El archivo se genera desde la lista en memoria, sin volver a leer `data/ofertas.json`.
+
+Para conocer el formulario, el estado y la presentación web, consulta [frontend.md](frontend.md). Para ver cómo se construye el CSV, consulta [exportar.md](exportar.md).
 
 ## Requisitos y ejecución
 
@@ -71,13 +81,17 @@ En CMD, escribe cada comando en una sola línea; `\` no continúa un comando en 
 
 `argparse` procesa opciones de consola, `json` serializa la lista de resultados y `Path` maneja la ruta del archivo. `scrapear_ofertas` se importa de `computrabajo.py`. `SALIDA` apunta a `data/ofertas.json`.
 
+### `buscar_ofertas(puesto, ubicacion, modalidad)`
+
+Llama a `scrapear_ofertas()`, guarda una copia de los resultados y devuelve la lista a quien llamó. La interfaz web importa y usa esta función directamente; por eso puede mostrar los resultados sin leer `data/ofertas.json`.
+
 ### `guardar_ofertas(ofertas)`
 
 Crea `data/` si hace falta y sobrescribe `data/ofertas.json` con los resultados de la búsqueda actual. No agrega resultados de ejecuciones anteriores.
 
 ### `main()`
 
-Declara los argumentos, llama a `scrapear_ofertas()`, guarda lo que devuelve y muestra el total. La condición `if __name__ == "__main__"` ejecuta `main()` solo cuando se inicia `scraper.py` directamente.
+Declara los argumentos, llama a `buscar_ofertas()` y muestra el total. La condición `if __name__ == "__main__"` ejecuta `main()` solo cuando se inicia `scraper.py` directamente; importarlo desde Streamlit no inicia la CLI.
 
 ## `computrabajo.py`: web y extracción
 
