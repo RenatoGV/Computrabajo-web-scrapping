@@ -46,6 +46,8 @@ La lista aparece en el área principal. Antes de realizar una búsqueda se muest
 
 Una búsqueda por defecto busca `software`:
 
+Scraping por defecto (`software`):
+
 ```cmd
 python scraper.py
 ```
