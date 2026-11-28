@@ -19,3 +19,6 @@ Thumbs.db
 
 # Datos originales sin procesar
 data/raw/
+
+# Resultados
+data/ofertas.json
